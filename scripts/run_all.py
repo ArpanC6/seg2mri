@@ -154,10 +154,15 @@ def extract_cases(tar_path: str, dest: str, limit: int) -> None:
     with tarfile.open(tar_path, "r") as tf:
         unique: dict[str, tarfile.TarInfo] = {}
         duplicates = 0
+        junk = 0
         for m in tf.getmembers():
             if not m.name.endswith(".nii.gz") or m.isdir():
                 continue
             name = m.name[2:] if m.name.startswith("./") else m.name
+            # macOS tars carry AppleDouble metadata ("._BRATS_001.nii.gz") beside every real file
+            if os.path.basename(name).startswith("._") or "/__MACOSX/" in f"/{name}":
+                junk += 1
+                continue
             duplicates += name in unique
             unique[name] = m  # last entry wins, matching extraction order
 
@@ -173,7 +178,7 @@ def extract_cases(tar_path: str, dest: str, limit: int) -> None:
         if not images:
             raise SystemExit(f"no imagesTr/*.nii.gz inside {tar_path} — is this Task01_BrainTumour.tar?")
         print(f"archive holds {len(images)} unique images and {len(labels)} unique labels "
-              f"({duplicates} duplicate entries skipped)", flush=True)
+              f"({duplicates} duplicates, {junk} AppleDouble entries skipped)", flush=True)
 
         cases = sorted(images)[:limit] if limit else sorted(images)
         missing = [c for c in cases if c not in labels]
