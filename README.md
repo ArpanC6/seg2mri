@@ -54,7 +54,7 @@ literature, and this README does not claim otherwise.
 Results are generated, never typed. One command runs the whole chain:
 
 ```bash
-python scripts/run_all.py --work runs/kaggle      # ~4-5 h on a free T4
+python scripts/run_all.py --work runs/kaggle      # ~7 h on a free T4
 ```
 
 It downloads MSD Task01, preprocesses, trains both models, samples held-out cases,
@@ -122,8 +122,8 @@ python -m seg2mri.preprocess_msd --src Task01_BrainTumour --out data/msd_prepare
 ### 2. Train
 
 ```bash
-python -m seg2mri.train --config configs/demo2d.yaml     # 13.9M params, ~2-3 h on a free T4
-python -m seg2mri.regress --config configs/reg2d.yaml    # same U-Net, one step, ~1 h
+python -m seg2mri.train --config configs/demo2d.yaml     # 13.9M params, ~5 h on a free T4
+python -m seg2mri.regress --config configs/reg2d.yaml    # same U-Net, one step, ~1.5 h
 python -m seg2mri.train --config configs/demo3d.yaml     # 8.6M params at 96³, slower
 ```
 

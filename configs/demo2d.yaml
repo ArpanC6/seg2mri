@@ -1,4 +1,4 @@
-# 2D axial-slice model. Runs on one free Kaggle GPU in ~2-3 hours.
+# 2D axial-slice model. ~5 h on one free Kaggle T4 (0.6 s/step at batch 16).
 seed: 42
 
 data:
@@ -20,7 +20,7 @@ diffusion:
   ddim_steps: 50
 
 train:
-  steps: 40000
+  steps: 30000
   batch_size: 16
   lr: 2.0e-4
   weight_decay: 1.0e-4

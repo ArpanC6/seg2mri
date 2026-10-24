@@ -35,16 +35,17 @@ result — it proves the download, preprocessing, both trainings, sampling, metr
 and the comparison table all work before you spend four hours on the real run.
 Look for `results/RESULTS.md` at the end.
 
-## Cell 2 — the real run (~4–5 h)
+## Cell 2 — the real run (~7 h)
 
 ```python
 %cd /kaggle/working/seg2mri
 !python scripts/run_all.py --work /kaggle/working/run
 ```
 
-Defaults: 300 cases, 128 px, 40,000 diffusion steps, 15,000 regressor steps,
-DDIM-50, every test case sampled. Stages whose outputs already exist are skipped,
-so if the session dies you can re-run this exact line and it continues.
+Defaults: 300 cases, 128 px, 30,000 diffusion steps, 12,000 regressor steps,
+DDIM-50, every test case sampled (~7 h on a T4). Stages whose outputs already
+exist are skipped, so if the session dies you can re-run this exact line and it
+continues.
 
 If the diffusion model hits `CUDA out of memory`, halve the batch for both models:
 

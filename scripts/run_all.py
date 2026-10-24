@@ -75,13 +75,57 @@ def count_cases(images_dir: str) -> int:
     return len([f for f in os.listdir(images_dir) if f.endswith(".nii.gz")])
 
 
+def pick_tmp() -> str:
+    """Scratch space that is not saved as Kaggle output.
+
+    /kaggle/temp is not present on every image; /tmp also works and is not
+    persisted. Never fall back to a path inside /kaggle/working if avoidable —
+    that would put the 7 GB download into the notebook output.
+    """
+    if not os.path.isdir("/kaggle/working"):
+        return os.path.join(REPO, "kaggle_tmp")
+    for candidate in ("/kaggle/temp", "/tmp/seg2mri_data"):
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, ".write_test")
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("ok")
+            os.remove(probe)
+            return candidate
+        except OSError:
+            continue
+    return os.path.join(REPO, "kaggle_tmp")
+
+
 # ----------------------------------------------------------------------------- stages
+
+def prepared_cases(prepared: str) -> list[str]:
+    meta_path = os.path.join(prepared, "meta.json")
+    if not have(meta_path):
+        return []
+    with open(meta_path, "r", encoding="utf-8") as fh:
+        return list(json.load(fh).get("cases", []))
+
+
+def check_prepared(prepared: str, expected: int) -> None:
+    """Never let a truncated dataset drive a multi-hour run."""
+    cases = prepared_cases(prepared)
+    if not cases:
+        raise SystemExit(f"{prepared} has no meta.json cases — preprocessing did not finish")
+    if expected and len(cases) < expected:
+        raise SystemExit(
+            f"{prepared} holds {len(cases)} cases but --limit is {expected}. "
+            f"Refusing to train on a truncated dataset: delete {prepared} and re-extract, "
+            f"or lower --limit to {len(cases)}."
+        )
+
 
 def stage_data(args) -> str:
     raw = args.raw_dir or os.path.join(args.tmp, "Task01_BrainTumour")
-    prepared = os.path.join(args.tmp, f"msd_prepared_{args.mode}_{args.size}")
+    prepared = os.path.join(args.tmp, f"msd_prepared_{args.mode}_{args.size}_{args.limit or 'all'}")
     if have(os.path.join(prepared, "meta.json")):
         print(f"[data] reusing {prepared}")
+        check_prepared(prepared, args.limit)
         return prepared
 
     if not args.raw_dir and count_cases(os.path.join(raw, "imagesTr")) < (args.limit or 1):
@@ -98,6 +142,9 @@ def stage_data(args) -> str:
     run([sys.executable, "-m", "seg2mri.preprocess_msd", "--src", raw, "--out", prepared,
          "--size", str(args.size), "--mode", args.mode] + (["--limit", str(args.limit)] if args.limit else []),
         "preprocess to memmap slices")
+    check_prepared(prepared, args.limit)
+    if not args.raw_dir:
+        shutil.rmtree(raw, ignore_errors=True)  # memmaps are what training reads; the tar stays for re-extraction
     return prepared
 
 
@@ -105,17 +152,52 @@ def extract_cases(tar_path: str, dest: str, limit: int) -> None:
     print(f"\n=== extract {'first ' + str(limit) if limit else 'all'} cases from {tar_path} ===", flush=True)
     os.makedirs(dest, exist_ok=True)
     with tarfile.open(tar_path, "r") as tf:
-        members = [m for m in tf.getmembers() if m.isfile() and m.name.endswith(".nii.gz")]
-        if limit:
-            images = sorted((m for m in members if "/imagesTr/" in m.name), key=lambda m: m.name)
-            keep = {os.path.basename(m.name)[:-7] for m in images[:limit]}
-            members = [m for m in members if os.path.basename(m.name)[:-7] in keep]
-        for m in members:
-            try:
-                tf.extract(m, dest, filter="data")
-            except TypeError:  # Python < 3.11.4
-                tf.extract(m, dest)
-    print(f"extracted {len(members)} files", flush=True)
+        unique: dict[str, tarfile.TarInfo] = {}
+        duplicates = 0
+        for m in tf.getmembers():
+            if not m.name.endswith(".nii.gz") or m.isdir():
+                continue
+            name = m.name[2:] if m.name.startswith("./") else m.name
+            duplicates += name in unique
+            unique[name] = m  # last entry wins, matching extraction order
+
+        images: dict[str, tarfile.TarInfo] = {}
+        labels: dict[str, tarfile.TarInfo] = {}
+        for name, m in unique.items():
+            stem = os.path.basename(name)[:-7]
+            if "/imagesTr/" in name:
+                images[stem] = m
+            elif "/labelsTr/" in name:
+                labels[stem] = m
+
+        if not images:
+            raise SystemExit(f"no imagesTr/*.nii.gz inside {tar_path} — is this Task01_BrainTumour.tar?")
+        print(f"archive holds {len(images)} unique images and {len(labels)} unique labels "
+              f"({duplicates} duplicate entries skipped)", flush=True)
+
+        cases = sorted(images)[:limit] if limit else sorted(images)
+        missing = [c for c in cases if c not in labels]
+        if missing:
+            raise SystemExit(
+                f"{len(missing)} of {len(cases)} selected cases have no label entry in the archive: {missing[:10]}"
+            )
+
+        for case in cases:
+            for m in (images[case], labels[case]):
+                try:
+                    tf.extract(m, dest, filter="data")
+                except TypeError:  # Python < 3.11.4
+                    tf.extract(m, dest)
+
+    print(f"extracted {len(cases)} images + {len(cases)} labels -> {dest}", flush=True)
+    landed = {root: count_cases(os.path.join(root, "imagesTr"))
+              for root in (os.path.join(dest, "Task01_BrainTumour"), dest)}
+    found = max(landed.values())
+    if found < len(cases):
+        raise SystemExit(
+            f"only {found} of {len(cases)} images landed on disk ({landed}) — "
+            f"the archive layout changed or the disk is full"
+        )
 
 
 def make_configs(args, prepared: str) -> tuple[str, str]:
@@ -249,14 +331,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", default="/kaggle/working/seg2mri_run" if os.path.isdir("/kaggle/working")
                     else os.path.join(REPO, "kaggle_run"))
-    ap.add_argument("--tmp", default="/kaggle/temp" if os.path.isdir("/kaggle/temp")
-                    else os.path.join(REPO, "kaggle_tmp"))
+    ap.add_argument("--tmp", default=pick_tmp(), help="scratch; raw data and prepared arrays (not persisted)")
     ap.add_argument("--raw-dir", default="", help="skip download; folder with imagesTr/ and labelsTr/")
     ap.add_argument("--limit", type=int, default=300, help="number of MSD cases (0 = all 484)")
     ap.add_argument("--size", type=int, default=128)
     ap.add_argument("--mode", choices=["2d", "3d"], default="2d")
-    ap.add_argument("--steps", type=int, default=40000)
-    ap.add_argument("--reg-steps", type=int, default=15000)
+    ap.add_argument("--steps", type=int, default=30000)
+    ap.add_argument("--reg-steps", type=int, default=12000)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--workers", type=int, default=0 if os.name == "nt" else 2)
     ap.add_argument("--ddim", type=int, default=50)
@@ -279,6 +360,10 @@ def main() -> int:
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(args.tmp, exist_ok=True)
     print(json.dumps(vars(args), indent=2), flush=True)
+
+    if os.path.abspath(args.tmp).startswith(os.path.abspath(args.work) + os.sep):
+        print("WARNING: --tmp is inside --work; the raw dataset will be saved as notebook output. "
+              "Use /kaggle/temp or /tmp.", flush=True)
     print(f"torch {torch_version()} | cuda {cuda_name()} | python {platform.python_version()}", flush=True)
 
     prepared = stage_data(args)

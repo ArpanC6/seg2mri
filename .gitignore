@@ -6,6 +6,8 @@ venv/
 data/
 runs/
 samples/
+kaggle_tmp/
+kaggle_run/
 *.npy
 *.npz
 *.nii.gz

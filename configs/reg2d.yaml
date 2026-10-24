@@ -1,4 +1,4 @@
-# Single-step regressor (the "coarse prior"). 15k steps is enough to converge.
+# Single-step regressor (the "coarse prior"). ~1.5 h on a free Kaggle T4.
 seed: 42
 
 data:
@@ -14,7 +14,7 @@ model:
   dropout: 0.0
 
 train:
-  steps: 15000
+  steps: 12000
   batch_size: 16
   lr: 2.0e-4
   weight_decay: 1.0e-4

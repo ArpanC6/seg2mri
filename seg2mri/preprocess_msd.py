@@ -75,6 +75,11 @@ def main() -> int:
         image_paths = image_paths[: args.limit]
 
     cases = [os.path.basename(p).replace(".nii.gz", "") for p in image_paths]
+    missing = [c for c in cases if not os.path.exists(os.path.join(args.src, "labelsTr", f"{c}.nii.gz"))]
+    if missing:
+        raise SystemExit(
+            f"{len(missing)} of {len(cases)} cases have no label under {args.src}/labelsTr: {missing[:10]}"
+        )
     rng = np.random.default_rng(args.seed)
     order = rng.permutation(len(cases))
     n_train = int(0.8 * len(cases))
@@ -113,8 +118,7 @@ def main() -> int:
             image[m] = normalise(image[m])
 
         label_path = os.path.join(args.src, "labelsTr", f"{case}.nii.gz")
-        mask = np.asanyarray(nib.load(label_path).dataobj).astype(np.uint8) if os.path.exists(label_path) \
-            else np.zeros(image.shape[1:], dtype=np.uint8)
+        mask = np.asanyarray(nib.load(label_path).dataobj).astype(np.uint8)
 
         orig_shape = image.shape[1:]
         image, mask = resize_case(image, mask, size)
