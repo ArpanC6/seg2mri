@@ -1,0 +1,27 @@
+# Single-step regressor (the "coarse prior"). 15k steps is enough to converge.
+seed: 42
+
+data:
+  root: data/msd_prepared
+  mode: 2d
+  augment: true
+  num_workers: 2
+
+model:
+  base_channels: 64
+  channel_mults: [1, 2, 4]
+  attn_levels: [2]
+  dropout: 0.0
+
+train:
+  steps: 15000
+  batch_size: 16
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  ema_decay: 0.9995
+  warmup_steps: 500
+  grad_clip: 1.0
+  grad_loss_weight: 0.1
+  log_every: 50
+  ckpt_every: 5000
+  out_dir: runs/reg2d

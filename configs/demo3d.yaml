@@ -1,0 +1,34 @@
+# 3D model at 96^3. Needs `preprocess_msd --size 96 --mode 3d`.
+# Attention is off: at 96^3 the bottleneck has 24^3 = 13,824 tokens and
+# quadratic attention would dominate memory for no measured gain at this scale.
+seed: 42
+
+data:
+  root: data/msd_prepared_96
+  mode: 3d
+  augment: true
+  num_workers: 0
+
+model:
+  base_channels: 32
+  channel_mults: [1, 2, 4]
+  attn_levels: []
+  dropout: 0.0
+
+diffusion:
+  timesteps: 1000
+  schedule: cosine
+  prediction: v
+  ddim_steps: 50
+
+train:
+  steps: 20000
+  batch_size: 1
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  ema_decay: 0.999
+  warmup_steps: 500
+  grad_clip: 1.0
+  log_every: 20
+  ckpt_every: 2000
+  out_dir: runs/demo3d

@@ -1,0 +1,32 @@
+# 2D axial-slice model. Runs on one free Kaggle GPU in ~2-3 hours.
+seed: 42
+
+data:
+  root: data/msd_prepared
+  mode: 2d
+  augment: true
+  num_workers: 2
+
+model:
+  base_channels: 64
+  channel_mults: [1, 2, 4]
+  attn_levels: [2]
+  dropout: 0.0
+
+diffusion:
+  timesteps: 1000
+  schedule: cosine
+  prediction: v
+  ddim_steps: 50
+
+train:
+  steps: 40000
+  batch_size: 16
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  ema_decay: 0.9995
+  warmup_steps: 1000
+  grad_clip: 1.0
+  log_every: 50
+  ckpt_every: 5000
+  out_dir: runs/demo2d
