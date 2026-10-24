@@ -41,13 +41,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ----------------------------------------------------------------------------- helpers
 
-def run(cmd: list[str], title: str) -> None:
-    print(f"\n=== {title} ===", flush=True)
-    print("$ " + " ".join(cmd), flush=True)
+def run(cmd: list[str], stage: str) -> None:
+    print(f"\n[{stage}] $ {' '.join(cmd)}", flush=True)
     env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONPATH=REPO)
     start = time.time()
     subprocess.run(cmd, cwd=REPO, env=env, check=True)
-    print(f"--- {title} done in {time.time() - start:.0f}s", flush=True)
+    print(f"[{stage}] done in {time.time() - start:.0f}s", flush=True)
 
 
 def have(path: str) -> bool:
@@ -132,8 +131,7 @@ def stage_data(args) -> str:
         tar_path = os.path.join(args.tmp, "Task01_BrainTumour.tar")
         os.makedirs(args.tmp, exist_ok=True)
         if not have(tar_path) or os.path.getsize(tar_path) < 5_000_000_000:
-            run(["curl", "-L", "-C", "-", "--retry", "3", "-o", tar_path, MSD_URL],
-                f"download MSD Task01 (~6.4 GB) -> {tar_path}")
+            run(["curl", "-L", "-C", "-", "--retry", "3", "-o", tar_path, MSD_URL], "data")
         extract_cases(tar_path, args.tmp, args.limit)
 
     if count_cases(os.path.join(raw, "imagesTr")) == 0:
@@ -141,7 +139,7 @@ def stage_data(args) -> str:
 
     run([sys.executable, "-m", "seg2mri.preprocess_msd", "--src", raw, "--out", prepared,
          "--size", str(args.size), "--mode", args.mode] + (["--limit", str(args.limit)] if args.limit else []),
-        "preprocess to memmap slices")
+        "preprocess")
     check_prepared(prepared, args.limit)
     if not args.raw_dir:
         shutil.rmtree(raw, ignore_errors=True)  # memmaps are what training reads; the tar stays for re-extraction
@@ -149,7 +147,8 @@ def stage_data(args) -> str:
 
 
 def extract_cases(tar_path: str, dest: str, limit: int) -> None:
-    print(f"\n=== extract {'first ' + str(limit) if limit else 'all'} cases from {tar_path} ===", flush=True)
+    scope = f"first {limit}" if limit else "all"
+    print(f"\n[data] extracting {scope} cases from {tar_path}", flush=True)
     os.makedirs(dest, exist_ok=True)
     with tarfile.open(tar_path, "r") as tf:
         unique: dict[str, tarfile.TarInfo] = {}
@@ -177,7 +176,7 @@ def extract_cases(tar_path: str, dest: str, limit: int) -> None:
 
         if not images:
             raise SystemExit(f"no imagesTr/*.nii.gz inside {tar_path} — is this Task01_BrainTumour.tar?")
-        print(f"archive holds {len(images)} unique images and {len(labels)} unique labels "
+        print(f"[data] archive: {len(images)} images, {len(labels)} labels "
               f"({duplicates} duplicates, {junk} AppleDouble entries skipped)", flush=True)
 
         cases = sorted(images)[:limit] if limit else sorted(images)
@@ -194,7 +193,7 @@ def extract_cases(tar_path: str, dest: str, limit: int) -> None:
                 except TypeError:  # Python < 3.11.4
                     tf.extract(m, dest)
 
-    print(f"extracted {len(cases)} images + {len(cases)} labels -> {dest}", flush=True)
+    print(f"[data] extracted {len(cases)} images + {len(cases)} labels to {dest}", flush=True)
     landed = {root: count_cases(os.path.join(root, "imagesTr"))
               for root in (os.path.join(dest, "Task01_BrainTumour"), dest)}
     found = max(landed.values())
@@ -229,16 +228,16 @@ def stage_train(args, cfg_path: str, out_dir: str, module: str, label: str) -> N
     run([sys.executable, "-m", module, "--config", cfg_path], f"train {label}")
 
 
-def stage_sample(args, ckpt: str, out: str, export_real: bool, steps: int) -> None:
+def stage_sample(args, label: str, ckpt: str, out: str, export_real: bool, steps: int) -> None:
     if have(os.path.join(out, "run.json")) and not args.force:
-        print(f"[sample] reusing {out}")
+        print(f"[sample {label}] reusing {out}")
         return
     cmd = [sys.executable, "-m", "seg2mri.sample", "--ckpt", ckpt, "--split", "test",
            "--n", "0" if args.sample_cases == 0 else str(args.sample_cases),
            "--out", out, "--steps", str(steps), "--batch", str(args.sample_batch)]
     if export_real:
         cmd.append("--export-real")
-    run(cmd, f"sample -> {out}")
+    run(cmd, f"sample {label}")
 
 
 def stage_baseline(args, cfg_path: str, out: str) -> None:
@@ -246,7 +245,7 @@ def stage_baseline(args, cfg_path: str, out: str) -> None:
         print(f"[baseline] reusing {out}")
         return
     run([sys.executable, "-m", "seg2mri.baseline", "--config", cfg_path, "--split", "test", "--out", out],
-        "class-mean baseline")
+        "baseline")
 
 
 def stage_evaluate(gen: str, real: str, out_csv: str, label: str) -> None:
@@ -261,7 +260,7 @@ def stage_compare(args, results_dir: str) -> str:
            "--run", f"regressor={os.path.join(results_dir, 'regressor.csv')}",
            "--run", f"diffusion={os.path.join(results_dir, 'diffusion.csv')}",
            "--reference", "regressor", "--out", out_md]
-    run(cmd, "merge results table")
+    run(cmd, "compare")
     return out_md
 
 
@@ -269,7 +268,7 @@ def stage_package(args) -> str:
     zip_path = os.path.join(args.work, "seg2mri_results.zip")
     manifest = os.path.join(args.work, "MANIFEST.txt")
     with open(manifest, "w", encoding="utf-8") as fh:
-        fh.write(f"seg2mri run — {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        fh.write(f"seg2mri run {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         fh.write(f"python {platform.python_version()} | torch {torch_version()} | cuda {cuda_name()}\n")
         fh.write(f"steps diffusion={args.steps} regressor={args.reg_steps} | "
                  f"data limit={args.limit or 'all'} size={args.size} mode={args.mode}\n")
@@ -284,7 +283,7 @@ def stage_package(args) -> str:
 
     include = [os.path.join(args.work, d) for d in ("results", "samples", "runs", "configs")]
     include.append(manifest)
-    print(f"\n=== package -> {zip_path} ===", flush=True)
+    print(f"\n[package] {zip_path}", flush=True)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
         for item in include:
             if os.path.isfile(item):
@@ -364,10 +363,13 @@ def main() -> int:
     samples_dir = os.path.join(args.work, "samples")
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(args.tmp, exist_ok=True)
-    print(json.dumps(vars(args), indent=2), flush=True)
+    print(f"\nwork  {args.work}", flush=True)
+    print(f"tmp   {args.tmp}", flush=True)
+    print(f"data  {args.limit or 'all'} cases, {args.size}px, {args.mode}", flush=True)
+    print(f"steps diffusion {args.steps}, regressor {args.reg_steps}, ddim {args.ddim}", flush=True)
 
     if os.path.abspath(args.tmp).startswith(os.path.abspath(args.work) + os.sep):
-        print("WARNING: --tmp is inside --work; the raw dataset will be saved as notebook output. "
+        print("warning: --tmp is inside --work; the raw dataset will be saved as notebook output. "
               "Use /kaggle/temp or /tmp.", flush=True)
     print(f"torch {torch_version()} | cuda {cuda_name()} | python {platform.python_version()}", flush=True)
 
@@ -377,9 +379,9 @@ def main() -> int:
     stage_train(args, diff_cfg, os.path.join(args.work, "runs", "diffusion"), "seg2mri.train", "diffusion")
     stage_train(args, reg_cfg, os.path.join(args.work, "runs", "regressor"), "seg2mri.regress", "regressor")
 
-    stage_sample(args, os.path.join(args.work, "runs", "diffusion", "ckpt-last.pt"),
+    stage_sample(args, "diffusion", os.path.join(args.work, "runs", "diffusion", "ckpt-last.pt"),
                  os.path.join(samples_dir, "diffusion"), export_real=True, steps=args.ddim)
-    stage_sample(args, os.path.join(args.work, "runs", "regressor", "ckpt-last.pt"),
+    stage_sample(args, "regressor", os.path.join(args.work, "runs", "regressor", "ckpt-last.pt"),
                  os.path.join(samples_dir, "regressor"), export_real=False, steps=0)
     stage_baseline(args, diff_cfg, os.path.join(samples_dir, "class_mean"))
 
@@ -396,7 +398,7 @@ def main() -> int:
 
     if not args.no_zip:
         stage_package(args)
-    print("\nDONE. results/RESULTS.md is the table; samples/ has the NIfTI volumes and montages.")
+    print("\ndone. see results/RESULTS.md and samples/.")
     return 0
 
 
