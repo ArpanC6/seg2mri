@@ -32,10 +32,10 @@ the runs, samples, metrics and zip in `working`. That keeps you well under the
 
 `--quick` uses 60 cases, 128 px, 600 + 300 steps and 4 sampled cases. It is not a
 result — it proves the download, preprocessing, both trainings, sampling, metrics
-and the comparison table all work before you spend four hours on the real run.
+and the comparison table all work before you spend eight hours on the real run.
 Look for `results/RESULTS.md` at the end.
 
-## Cell 2 — the real run (~7 h)
+## Cell 2 — the real run (~8 h)
 
 ```python
 %cd /kaggle/working/seg2mri
@@ -43,7 +43,7 @@ Look for `results/RESULTS.md` at the end.
 ```
 
 Defaults: 300 cases, 128 px, 30,000 diffusion steps, 12,000 regressor steps,
-DDIM-50, every test case sampled (~7 h on a T4). Stages whose outputs already
+DDIM-50, every test case sampled (~8 h on a T4). Stages whose outputs already
 exist are skipped, so if the session dies you can re-run this exact line and it
 continues.
 

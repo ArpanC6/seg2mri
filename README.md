@@ -51,10 +51,26 @@ literature, and this README does not claim otherwise.
 
 ## Results
 
+One run, MSD Task01 (300 public cases), 30 held-out cases = 120 volumes (four
+modalities each), about eight hours on a free Kaggle T4:
+
+| method | n | SSIM (3D) | MS-SSIM (axial) | PSNR (dB) | NRMSE |
+|---|---|---|---|---|---|
+| class-mean | 120 | 0.7588 ± 0.0193 | 0.4622 ± 0.0552 | 14.22 ± 2.04 | 0.1998 ± 0.0466 |
+| single-step regressor | 120 | 0.7698 ± 0.0203 | 0.7996 ± 0.0379 | 16.69 ± 2.17 | 0.1510 ± 0.0386 |
+| diffusion, 50 DDIM steps | 120 | 0.4971 ± 0.0132 | 0.7330 ± 0.0225 | 15.76 ± 1.67 | 0.1659 ± 0.0331 |
+
+The single-step regressor wins on every metric, at 1/50 of the sampling cost.
+Diffusion beats the class-mean baseline on structure (MS-SSIM 0.733 vs 0.462)
+but not on SSIM. That is the result, and it is reported as such: SSIM and PSNR
+are the metrics a conditional-mean predictor is expected to win, and with one
+sample per case this table measures fidelity, not diversity. The 3D model and a
+multi-sample budget sweep are the next experiments.
+
 Results are generated, never typed. One command runs the whole chain:
 
 ```bash
-python scripts/run_all.py --work runs/kaggle      # ~7 h on a free T4
+python scripts/run_all.py --work runs/kaggle      # ~8 h on a free T4
 ```
 
 It downloads MSD Task01, preprocesses, trains both models, samples held-out cases,
